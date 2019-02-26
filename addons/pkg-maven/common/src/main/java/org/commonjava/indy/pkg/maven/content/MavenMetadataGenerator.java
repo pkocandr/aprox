@@ -54,7 +54,6 @@ import org.commonjava.maven.galley.event.EventMetadata;
 import org.commonjava.maven.galley.maven.parse.GalleyMavenXMLException;
 import org.commonjava.maven.galley.maven.parse.XMLInfrastructure;
 import org.commonjava.maven.galley.maven.spi.type.TypeMapper;
-import org.commonjava.maven.galley.model.ConcreteResource;
 import org.commonjava.maven.galley.model.Transfer;
 import org.commonjava.maven.galley.model.TransferOperation;
 import org.commonjava.maven.galley.model.TypeMapping;
@@ -84,8 +83,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
-import java.util.stream.Collectors;
-
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.commons.io.IOUtils.closeQuietly;
 import static org.commonjava.atlas.maven.ident.util.SnapshotUtils.LOCAL_SNAPSHOT_VERSION_PART;
@@ -197,6 +194,7 @@ public class MavenMetadataGenerator
         }
     }
 
+    @Override
     public void clearAllMerged( ArtifactStore store, String...paths )
     {
         super.clearAllMerged( store, paths );
@@ -295,58 +293,19 @@ public class MavenMetadataGenerator
         // if there is a possibility we are listing an artifactId
         if ( pathElementsCount >= 2 )
         {
-            // regardless, we will need this first level of listings. What we do with it will depend on the logic below...
-            final List<StoreResource> firstLevelFiles = fileManager.listRaw( store, path, eventMetadata );
-
-            ArtifactPathInfo samplePomInfo = null;
-            for ( final StoreResource topResource : firstLevelFiles )
-            {
-                final String topPath = topResource.getPath();
-                if ( topPath.endsWith( ".pom" ) )
-                {
-                    samplePomInfo = ArtifactPathInfo.parse( topPath );
-                    break;
-                }
-            }
-
-            // if this dir does not contain a pom check if a subdir contain a pom
-            if ( samplePomInfo == null )
-            {
-                List<String> firstLevelDirs = firstLevelFiles.stream()
-                                                             .map( ConcreteResource::getPath )
-                                                             .filter( (subpath) -> subpath.endsWith( "/" ) )
-                                                             .collect( Collectors.toList() );
-                final Map<String, List<StoreResource>> secondLevelMap = fileManager.listRaw( store, firstLevelDirs, eventMetadata );
-                nextTopResource: for ( final String topPath : firstLevelDirs )
-                {
-                    final List<StoreResource> secondLevelListing = secondLevelMap.get( topPath );
-                    for ( final StoreResource fileResource : secondLevelListing )
-                    {
-                        if ( fileResource.getPath()
-                                         .endsWith( ".pom" ) )
-                        {
-                            samplePomInfo = ArtifactPathInfo.parse( fileResource.getPath() );
-                            break nextTopResource;
-                        }
-                    }
-                }
-            }
-
             // TODO: Generation of plugin metadata files (groupId-level) is harder, and requires cracking open the jar file
             // This is because that's the only place the plugin prefix can be reliably retrieved from.
             // We won't worry about this for now.
-            if ( samplePomInfo != null )
-            {
-                final List<StoreResource> result = new ArrayList<>();
-                result.add( mdResource );
-                result.add( new StoreResource( LocationUtils.toLocation( store ),
-                                               Paths.get( path, MavenMetadataMerger.METADATA_MD5_NAME )
-                                               .toString() ) );
-                result.add( new StoreResource( LocationUtils.toLocation( store ),
-                                               Paths.get( path, MavenMetadataMerger.METADATA_SHA_NAME )
-                                               .toString() ) );
-                return result;
-            }
+
+            final List<StoreResource> result = new ArrayList<>();
+            result.add( mdResource );
+            result.add( new StoreResource( LocationUtils.toLocation( store ),
+                                           Paths.get( path, MavenMetadataMerger.METADATA_MD5_NAME )
+                                           .toString() ) );
+            result.add( new StoreResource( LocationUtils.toLocation( store ),
+                                           Paths.get( path, MavenMetadataMerger.METADATA_SHA_NAME )
+                                           .toString() ) );
+            return result;
         }
 
         return null;
@@ -381,7 +340,7 @@ public class MavenMetadataGenerator
             eventMetadata.set( GROUP_METADATA_EXISTS, true );
             return target;
         }
-        
+
         AtomicReference<IndyWorkflowException> wfEx = new AtomicReference<>();
         final String mergePath = toMergePath;
         boolean mergingDone = mergerLocks.ifUnlocked( computeKey(group, toMergePath), p->{
